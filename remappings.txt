@@ -1,0 +1,16 @@
+@permit2/=lib/permit2/src/
+@arbitrum/=node_modules/@arbitrum/
+@axelar-network/=node_modules/@axelar-network/
+@chainlink/=node_modules/@chainlink/
+@eth-optimism/=node_modules/@eth-optimism/
+@hyperlane-xyz/=node_modules/@hyperlane-xyz/core/contracts/
+@layerzerolabs/=node_modules/@layerzerolabs/
+@offchainlabs/=node_modules/@offchainlabs/
+@openzeppelin/=node_modules/@openzeppelin/
+@scroll-tech/=node_modules/@scroll-tech/
+@uniswap/=node_modules/@uniswap/
+@zksync/=node_modules/@zksync/
+fx-portal/=node_modules/fx-portal/
+hardhat-deploy/=node_modules/hardhat-deploy/
+solady/=lib/solady/src/
+solidity-bytes-utils/=node_modules/solidity-bytes-utils/

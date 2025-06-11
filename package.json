@@ -1,0 +1,51 @@
+{
+  "name": "@bootnodedev/intents-framework-core",
+  "description": "Core solidity contracts for the Intent Framework",
+  "version": "0.1.0",
+  "author": {
+    "name": "BootNode"
+  },
+  "dependencies": {
+    "@hyperlane-xyz/core": "^5.4.1",
+    "@openzeppelin/contracts": "^4.9.6",
+    "@uniswap/permit2": "github:Uniswap/permit2",
+    "dotenv-run-script": "^0.4.1"
+  },
+  "type": "module",
+  "keywords": [],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "scripts": {
+    "clean": "yarn hardhat-esm clean && rm -rf ./dist ./cache ./cache_hardhat ./types ./coverage ./out ./forge-cache ./fixtures && forge clean",
+    "build": "yarn hardhat-esm compile && tsc && ./exportBuildArtifact.sh",
+    "hardhat-esm": "NODE_OPTIONS='--experimental-loader ts-node/esm/transpile-only --no-warnings=ExperimentalWarning' hardhat --config hardhat.config.cts",
+    "forge:build": "forge build",
+    "lint": "yarn lint:sol && yarn prettier:check",
+    "lint:sol": "forge fmt --check && solhint \"{script,src,test}/**/*.sol\"",
+    "sol:fmt": "forge fmt",
+    "prettier:check": "prettier --check \"**/*.{json,md,yml}\" --ignore-path \".prettierignore\"",
+    "prettier:write": "prettier --write \"**/*.{json,md,yml}\" --ignore-path \".prettierignore\"",
+    "test": "forge test -vvv",
+    "test:coverage": "forge coverage --no-match-coverage \"(test|mock|node_modules|script)\"",
+    "test:coverage:report": "forge coverage --no-match-coverage \"(test|mock|node_modules|script)\" --report lcov && genhtml lcov.info --ignore-errors inconsistent,inconsistent --branch-coverage --output-dir coverage",
+    "deployHyperlane7683": "forge script script/DeployHyperlane7683.s.sol:DeployHyperlane7683 -f $NETWORK --broadcast --verify --slow -vvv",
+    "run:deployHyperlane7683": "dotenv-run-script deployHyperlane7683",
+    "deploySimple": "forge script script/DeploySimple.s.sol:DeploySimple -f $NETWORK --broadcast --slow -vvv",
+    "run:deploySimple": "dotenv-run-script deploySimple",
+    "deployToken": "forge script script/DeployToken.s.sol:DeployToken -f $NETWORK --broadcast --verify --slow -vvv",
+    "run:deployToken": "dotenv-run-script deployToken",
+    "openOrder": "forge script script/OpenOrder.s.sol:OpenOrder -f $NETWORK --broadcast --verify --slow -vvv",
+    "run:openOrder": "dotenv-run-script openOrder",
+    "deployBatchOpen": "forge script script/DeployBatchOpen.s.sol:DeployBatchOpen -f $NETWORK --broadcast --verify --slow -vvv",
+    "run:deployBatchOpen": "dotenv-run-script deployBatchOpen",
+    "openBatchOrder": "forge script script/OpenBatchOrder.s.sol:OpenBatchOrder -f $NETWORK --broadcast --verify --slow -vvv",
+    "run:openBatchOrder": "dotenv-run-script openBatchOrder",
+    "enrollRouter": "forge script script/EnrollRouter.s.sol:EnrollRouter -f $NETWORK --broadcast --slow -vvv",
+    "run:enrollRouter": "dotenv-run-script enrollRouter",
+    "upgradeSimple": "forge script script/UpgradeSimple.s.sol:UpgradeSimple -f $NETWORK --broadcast --slow -vvv",
+    "run:upgradeSimple": "dotenv-run-script upgradeSimple",
+    "refundOrder": "forge script script/RefundOrder.s.sol:RefundOrder -f $NETWORK --broadcast --slow -vvv",
+    "run:refundOrder": "dotenv-run-script refundOrder"
+  }
+}
