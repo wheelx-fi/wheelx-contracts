@@ -6,53 +6,59 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IRouter} from "./libs/IRouter.sol";
 
 contract ApprovalProxy is Ownable {
+    uint256 constant SEND_GAS = 100000;
+
     using SafeTransferLib for address;
 
-    event RouterUpdated(address newRouter);
+    event RouterUpdated(IRouter newRouter);
     error ArrayLengthsMismatch();
-    error RefundToCannotBeZeroAddress();
     error NativeTransferFailed();
 
-    address public router;
+    IRouter public router;
 
-    constructor(address _owner, address _router) {
+    struct TokenTransfer {
+        address token;
+        uint256 amount;
+    }
+
+    constructor(address _owner, IRouter _router) {
         _initializeOwner(_owner);
         router = _router;
     }
 
     // allow refund eth
-    receive() external payable {}
-
-    function withdraw() external onlyOwner {
-        _send(msg.sender, address(this).balance);
+    receive() external payable {
+        // only accept eth from router
+        if (msg.sender != address(router)) {
+            revert NativeTransferFailed();
+        }
     }
 
-    function setRouter(address _router) external onlyOwner {
+    function withdraw() external onlyOwner returns (uint256) {
+        _send(msg.sender, address(this).balance);
+        return address(this).balance;
+    }
+
+    function setRouter(IRouter _router) external onlyOwner {
         router = _router;
 
         emit RouterUpdated(_router);
     }
 
     function transferAndMulticall(
-        address[] calldata tokens,
-        uint256[] calldata amounts,
+        TokenTransfer[] calldata transfers,
         bytes calldata calls,
-        address refundTo,
+        address payable refundTo,
         bytes32 request_id
     ) external payable returns (bytes memory) {
-        // Revert if array lengths do not match
-        if ((tokens.length != amounts.length)) {
-            revert ArrayLengthsMismatch();
-        }
-
         // Transfer the tokens to the router
-        for (uint256 i = 0; i < tokens.length; i++) {
-            tokens[i].safeTransferFrom(msg.sender, router, amounts[i]);
+        for (uint256 i = 0; i < transfers.length; i++) {
+            transfers[i].token.safeTransferFrom(msg.sender, address(router), transfers[i].amount);
         }
 
         // Call multicall on the router
         // @dev msg.sender for the calls to targets will be the router
-        return IRouter(router).safeMultiCall{value: msg.value}(
+        return router.safeMultiCall{value: msg.value}(
             calls,
             refundTo,
             request_id
@@ -66,7 +72,7 @@ contract ApprovalProxy is Ownable {
             // Provide at most 100k gas to the internal call, which is
             // more than enough to cover common use-cases of logic for
             // receiving native tokens (eg. SCW payable fallbacks).
-            success := call(100000, to, value, 0, 0, 0, 0)
+            success := call(SEND_GAS, to, value, 0, 0, 0, 0)
         }
 
         if (!success) {

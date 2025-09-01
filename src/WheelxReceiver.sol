@@ -2,7 +2,7 @@
 pragma solidity ^0.8.9;
 
 contract WheelxReceiver {
-    // --- Errors ---
+    uint256 constant SEND_GAS = 100000;
 
     struct Call {
         address to;
@@ -10,7 +10,9 @@ contract WheelxReceiver {
         uint256 value;
     }
 
-    error CallFailed();
+    // --- Errors ---
+
+    error CallFailed(bytes);
     error Unauthorized();
     error NativeTransferFailed();
 
@@ -20,11 +22,11 @@ contract WheelxReceiver {
 
     // --- Fields ---
 
-    address private immutable SOLVER;
+    address payable private immutable SOLVER;
 
     // --- Constructor ---
 
-    constructor(address solver) {
+    constructor(address payable solver) {
         SOLVER = solver;
     }
 
@@ -50,9 +52,9 @@ contract WheelxReceiver {
             for (uint256 i; i < length; i++) {
                 Call memory c = calls[i];
 
-                (bool success, ) = c.to.call{value: c.value}(c.data);
+                (bool success, bytes memory reason) = c.to.call{value: c.value}(c.data);
                 if (!success) {
-                    revert CallFailed();
+                    revert CallFailed(reason);
                 }
             }
         }
@@ -60,19 +62,22 @@ contract WheelxReceiver {
     // --- Internal methods ---
 
     function to_bytes32(bytes memory data) internal pure returns (bytes32 converted) {
+        if (data.length < 32) {
+            return 0;
+        }
         assembly {
             converted := mload(add(data, 32))
         }
     }
 
-    function send(address to, uint256 value) internal {
+    function send(address payable to, uint256 value) internal {
         bool success;
         assembly {
             // Save gas by avoiding copying the return data to memory.
             // Provide at most 100k gas to the internal call, which is
             // more than enough to cover common use-cases of logic for
             // receiving native tokens (eg. SCW payable fallbacks).
-            success := call(100000, to, value, 0, 0, 0, 0)
+            success := call(SEND_GAS, to, value, 0, 0, 0, 0)
         }
 
         if (!success) {

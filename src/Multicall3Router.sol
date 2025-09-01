@@ -3,84 +3,11 @@ pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {IPermit2} from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import {IRouter} from "./libs/IRouter.sol";
-import { IPermit2 } from "@uniswap/permit2/src/interfaces/IPermit2.sol";
-
-library Panic {
-    function panic(uint256 code) internal pure {
-        assembly ("memory-safe") {
-            mstore(0x00, 0x4e487b71) // selector for `Panic(uint256)`
-            mstore(0x20, code)
-            revert(0x1c, 0x24)
-        }
-    }
-
-    // https://docs.soliditylang.org/en/latest/control-structures.html#panic-via-assert-and-error-via-require
-    uint8 internal constant GENERIC = 0x00;
-    uint8 internal constant ASSERT_FAIL = 0x01;
-    uint8 internal constant ARITHMETIC_OVERFLOW = 0x11;
-    uint8 internal constant DIVISION_BY_ZERO = 0x12;
-    uint8 internal constant ENUM_CAST = 0x21;
-    uint8 internal constant CORRUPT_STORAGE_ARRAY = 0x22;
-    uint8 internal constant POP_EMPTY_ARRAY = 0x31;
-    uint8 internal constant ARRAY_OUT_OF_BOUNDS = 0x32;
-    uint8 internal constant OUT_OF_MEMORY = 0x41;
-    uint8 internal constant ZERO_FUNCTION_POINTER = 0x51;
-}
-
-library Revert {
-    function _revert(bytes memory reason) internal pure {
-        assembly ("memory-safe") {
-            revert(add(reason, 0x20), mload(reason))
-        }
-    }
-
-    function maybeRevert(bool success, bytes memory reason) internal pure {
-        if (!success) {
-            _revert(reason);
-        }
-    }
-}
-
-
-library SafeApproveLib {
-    function safeApprove(IERC20 token, address to, uint256 amount) internal {
-        assembly ("memory-safe") {
-            mstore(0x14, to) // Store the `to` argument.
-            mstore(0x34, amount) // Store the `amount` argument.
-            // Storing `amount` clobbers the upper bits of the free memory pointer, but those bits
-            // can never be set without running into an OOG, so it's safe. We'll restore them to
-            // zero at the end.
-            mstore(0x00, 0x095ea7b3000000000000000000000000) // Selector for `approve(address,uint256)`, with `to`'s padding.
-
-            // Calldata starts at offset 16 and is 68 bytes long (2 * 32 + 4).
-            // If there is returndata (optional) we copy the first 32 bytes into the first slot of memory.
-            if iszero(call(gas(), token, 0x00, 0x10, 0x44, 0x00, 0x20)) {
-                let ptr := and(0xffffffffffffffffffffffff, mload(0x40))
-                returndatacopy(ptr, 0x00, returndatasize())
-                revert(ptr, returndatasize())
-            }
-            // We check that the call either returned exactly 1 [true] (can't just be non-zero
-            // data), or had no return data.
-            if iszero(or(and(eq(mload(0x00), 0x01), lt(0x1f, returndatasize())), iszero(returndatasize()))) {
-                mstore(0x00, 0x3e3f8f73) // Selector for `ApproveFailed()`
-                revert(0x1c, 0x04)
-            }
-
-            mstore(0x34, 0x00) // Restore the part of the free memory pointer that was overwritten.
-        }
-    }
-
-    function safeApproveIfBelow(IERC20 token, address spender, uint256 amount) internal {
-        uint256 allowance = token.allowance(address(this), spender);
-        if (allowance < amount) {
-            if (allowance != 0) {
-                safeApprove(token, spender, 0);
-            }
-            safeApprove(token, spender, type(uint256).max);
-        }
-    }
-}
+import {Panic} from "./libs/Panic.sol";
+import {Revert} from "./libs/Revert.sol";
+import {SafeApproveLib} from "./libs/SafeApproveLib.sol";
 
 contract Multicall3Router is IRouter {
     using Revert for bool;
@@ -106,12 +33,14 @@ contract Multicall3Router is IRouter {
     }
 
     // Allow ETH transfers
-    receive() external payable {}
+    receive() external payable {
+        // accept ETH
+    }
 
     // a safer version of multicall3, which makes sure remaining eth is sent away.
     function safeMultiCall(
         bytes calldata calls,
-        address refundTo,
+        address payable refundTo,
         bytes32 request_id
     ) external payable returns (bytes memory) {
         // perform multicall
@@ -122,21 +51,19 @@ contract Multicall3Router is IRouter {
         if (address(this).balance > 0) {
             // If refundTo is address(0), refund to msg.sender
             address refundAddr = refundTo == address(0) ? msg.sender : refundTo;
-
-            uint256 amount = address(this).balance;
-            refundAddr.safeTransferETH(amount);
+            refundAddr.safeTransferETH(address(this).balance);
         }
 
         emit WheelxRouter(request_id);
         return returnData;
     }
 
-    function sellToPool(address sellToken, uint256 bps, address pool, uint256 offset, bytes memory data) external {
+    function sellToPool(IERC20 sellToken, uint256 bps, address pool, uint256 offset, bytes memory data) external {
         bool success;
         bytes memory returnData;
         uint256 value;
 
-        if (sellToken == address(0)) {
+        if (address(sellToken) == address(0)) {
             value = (address(this).balance * bps) / BASIS;
             if (data.length == 0) {
                 if (offset != 0) revert InvalidOffset();
@@ -152,7 +79,7 @@ contract Multicall3Router is IRouter {
                 }
             }
         } else {
-            uint256 amount = (IERC20(sellToken).balanceOf(address(this)) * bps) / BASIS;
+            uint256 amount = sellToken.balanceOf(address(this)) * bps / BASIS;
             if ((offset += 32) > data.length) {
                 Panic.panic(Panic.ARRAY_OUT_OF_BOUNDS);
             }
@@ -160,7 +87,7 @@ contract Multicall3Router is IRouter {
                 mstore(add(data, offset), amount)
             }
             if (address(sellToken) != pool) {
-                IERC20(sellToken).safeApproveIfBelow(pool, amount);
+                sellToken.safeApproveIfBelow(pool, amount);
             }
         }
 
@@ -170,53 +97,50 @@ contract Multicall3Router is IRouter {
         if (returnData.length == 0 && pool.code.length == 0) revert InvalidTarget();
     }
 
-    function cleanupERC20(address token, address refundTo) external {
+    function cleanupERC20(IERC20 token, address refundTo) external returns (uint256) {
         // Check the router's balance for the token
-        uint256 balance = IERC20(token).balanceOf(address(this));
+        uint256 balance = token.balanceOf(address(this));
 
         // Transfer the token to the refundTo address
         if (balance > 0) {
-            IERC20(token).transfer(refundTo, balance);
+            address(token).safeTransfer(refundTo, balance);
         }
+
+        return balance;
     }
 
-    function safeApproveIfBelow(address token, address spender, uint256 amount) external {
-        IERC20(token).safeApproveIfBelow(spender, amount);
+    function safeApproveIfBelow(IERC20 token, address spender, uint256 amount) external {
+        token.safeApproveIfBelow(spender, amount);
     }
 
-    function safeApprovePermit2(address token, address spender, uint256 amount) external {
+    function safeApprovePermit2(IERC20 token, address spender, uint256 amount) external {
         // Approve the spender to spend the specified amount of tokens through permit2
-        IERC20(token).safeApproveIfBelow(address(permit2), amount);
-        (uint256 allowance, uint48 expiration,) = permit2.allowance(address(this), token, spender);
+        token.safeApproveIfBelow(address(permit2), amount);
+        (uint256 allowance, uint48 expiration,) = permit2.allowance(address(this), address(token), spender);
         if (allowance < amount || expiration <= block.timestamp) {
-            permit2.approve(token, spender, type(uint160).max, type(uint48).max);
+            permit2.approve(address(token), spender, type(uint160).max, type(uint48).max);
         }
+    }
+
+    struct TokenTransfer {
+        IERC20 token;
+        address recipient;
+        uint256 amount;
     }
 
     function cleanupErc20s(
-        address[] calldata tokens,
-        address[] calldata recipients,
-        uint256[] calldata amounts
+        TokenTransfer[] calldata transfers
     ) public virtual {
-        // Revert if array lengths do not match
-        if (
-            tokens.length != amounts.length ||
-            amounts.length != recipients.length
-        ) {
-            revert ArrayLengthsMismatch();
-        }
-
-        for (uint256 i; i < tokens.length; i++) {
-            address token = tokens[i];
-            address recipient = recipients[i];
+        for (uint256 i; i < transfers.length; i++) {
+            TokenTransfer memory t = transfers[i];
 
             // Get the amount to transfer
-            uint256 amount = amounts[i] == 0
-                ? IERC20(token).balanceOf(address(this))
-                : amounts[i];
+            uint256 amount = t.amount == 0
+                ? t.token.balanceOf(address(this))
+                : t.amount;
 
             // Transfer the token to the recipient address
-            token.safeTransfer(recipient, amount);
+            address(t.token).safeTransfer(t.recipient, amount);
         }
     }
 }
